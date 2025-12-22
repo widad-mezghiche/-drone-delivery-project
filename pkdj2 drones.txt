@@ -1,0 +1,201 @@
+package drones;
+
+class1 Drone
+
+
+import geographic.Position;
+import java.util.ArrayList;
+import java.util.List;
+
+public abstract class Drone {
+    private static int nextId = 1;
+    
+    protected int id;
+    protected Position position;
+    protected double battery;
+    protected String model;
+    protected double speed;
+    protected double capacity;
+    protected String status;
+    protected double totalDistance;
+    protected List<Position> positionHistory;
+    
+    public Drone(Position position, String model, double speed, double capacity) {
+        this.id = nextId++;
+        this.position = position;
+        this.battery = 100.0;
+        this.model = model;
+        this.speed = speed;
+        this.capacity = capacity;
+        this.status = "AVAILABLE";
+        this.totalDistance = 0.0;
+        this.positionHistory = new ArrayList<>();
+        this.positionHistory.add(new Position(position.getX(), position.getY()));
+    }
+    
+    // ============ GETTERS ============
+    public int getId() { return id; }
+    public Position getPosition() { return position; }
+    public double getBattery() { return battery; }
+    public String getModel() { return model; }
+    public double getSpeed() { return speed; }
+    public double getCapacity() { return capacity; }
+    public String getStatus() { return status; }
+    public double getTotalDistance() { return totalDistance; }
+    public List<Position> getPositionHistory() { return positionHistory; }
+    
+    // ============ SETTERS ============
+    public void setPosition(Position position) { this.position = position; }
+    public void setStatus(String status) { this.status = status; }
+    public void setBattery(double battery) { 
+        this.battery = battery; 
+        if (this.battery < 0) this.battery = 0;
+        if (this.battery > 100) this.battery = 100;
+    }
+    public void setSpeed(double speed) { this.speed = speed; }
+    public void setTotalDistance(double distance) { this.totalDistance = distance; }
+    
+    // ============ ABSTRACT METHOD ============
+    public abstract double calculateConsumption(double distance);
+    
+    // ============ CONCRETE METHODS ============
+    public boolean canFlyTo(Position destination, double packageWeight) {
+        if (packageWeight > capacity) return false;
+        
+        double distance = position.distanceTo(destination);
+        double roundTripDistance = distance * 2;
+        double requiredBattery = calculateConsumption(roundTripDistance);
+        
+        return battery >= requiredBattery;
+    }
+    
+    public void flyTo(Position destination) {
+        if (position.equals(destination)) return;
+        
+        double distance = position.distanceTo(destination);
+        double consumption = calculateConsumption(distance);
+        
+        battery -= consumption;
+        if (battery < 0) battery = 0;
+        
+        totalDistance += distance;
+        position = destination;
+        positionHistory.add(new Position(position.getX(), position.getY()));
+    }
+    
+    public boolean flyToStepByStep(Position destination, double stepDistance) {
+        if (position.equals(destination)) return true;
+        
+        double remainingDistance = position.distanceTo(destination);
+        
+        if (stepDistance >= remainingDistance) {
+            flyTo(destination);
+            return true;
+        }
+        
+        Position nextPosition = position.moveTo(destination, stepDistance);
+        double consumption = calculateConsumption(stepDistance);
+        
+        if (battery < consumption) {
+            return false;
+        }
+        
+        battery -= consumption;
+        totalDistance += stepDistance;
+        position = nextPosition;
+        positionHistory.add(new Position(position.getX(), position.getY()));
+        
+        return false;
+    }
+    
+    public void recharge(double percentage) {
+        battery += percentage;
+        if (battery > 100) battery = 100;
+    }
+    
+    @Override
+    public boolean equals(Object obj) {
+        if (this == obj) return true;
+        if (obj == null || getClass() != obj.getClass()) return false;
+        Drone drone = (Drone) obj;
+        return id == drone.id;
+    }
+    
+    @Override
+    public int hashCode() {
+        return id;
+    }
+    
+    @Override
+    public String toString() {
+        return String.format("Drone#%d [%s] Pos=%s Battery=%.1f%% Status=%s Dist=%.1fkm", 
+                           id, model, position, battery, status, totalDistance);
+    }
+}
+________________________________________________________________________________________________
+class 2 ExpressDrone
+_________________________________________________________________________________________________
+import geographic.Position;
+
+	public class ExpressDrone extends Drone {
+	    private static final double CONSUMPTION_PER_KM = 4.0;
+	    private static final double BASE_SPEED = 45.0;
+	    private static final double CAPACITY = 1.0;
+	    
+	    public ExpressDrone(Position position) {
+	        super(position, "ExpressDrone", BASE_SPEED, CAPACITY);
+	    }
+	    
+	    @Override
+	    public double calculateConsumption(double distance) {
+	        return distance * CONSUMPTION_PER_KM;
+	    }
+	}
+
+______________________________________________________________________________
+class3 HeavyDrone
+________________________________________________________________________________
+import geographic.Position;
+
+	public class HeavyDrone extends Drone {
+	    private static final double CONSUMPTION_PER_KM = 5.0;
+	    private static final double BASE_SPEED = 20.0;
+	    private static final double LOW_BATTERY_SPEED = 16.0;
+	    private static final double CAPACITY = 3.0;
+	    
+	    public HeavyDrone(Position position) {
+	        super(position, "HeavyDrone", BASE_SPEED, CAPACITY);
+	    }
+	    
+	    
+	    @Override
+	    public double getSpeed() {
+	        return (getBattery() < 20.0) ? LOW_BATTERY_SPEED : super.getSpeed();
+	    }
+	    
+	    @Override
+	    public double calculateConsumption(double distance) {
+	        return distance * CONSUMPTION_PER_KM;
+	    }
+	}
+
+___________________________________________________________________________
+class 4 StandardDrone
+____________________________________________________________________________
+import geographic.Position;
+
+	public class StandardDrone extends Drone {
+	    private static final double CONSUMPTION_PER_KM = 3.0;
+	    private static final double BASE_SPEED = 30.0;
+	    private static final double CAPACITY = 1.0;
+	    
+	    public StandardDrone(Position position) {
+	        super(position, "StandardDrone", BASE_SPEED, CAPACITY);
+	    }
+	    
+	    @Override
+	    public double calculateConsumption(double distance) {
+	        return distance * CONSUMPTION_PER_KM;
+	    }
+	
+}
