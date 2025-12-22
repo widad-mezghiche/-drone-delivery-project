@@ -1,0 +1,194 @@
+package control;
+
+
+
+
+import geographic.*;
+import drones.*;
+import orders.*;
+import java.util.ArrayList;
+import java.util.List;
+
+public class ControlCenter {
+    private List<Drone> fleet;
+    private List<Order> pendingOrders;
+    private List<Order> processedOrders;
+    private Position base;
+    private Map map;
+    
+    private static int totalDeliveries = 0;
+    private static double totalDistance = 0.0;
+    private static double totalEnergyConsumed = 0.0;
+    private static int expressDeliveries = 0;
+    private static int normalDeliveries = 0;
+    
+    public ControlCenter(Position base, Map map) {
+        this.fleet = new ArrayList<>();
+        this.pendingOrders = new ArrayList<>();
+        this.processedOrders = new ArrayList<>();
+        this.base = base;
+        this.map = map;
+    }
+    
+    public void addDrone(Drone drone) {
+        fleet.add(drone);
+        System.out.println("➕ Added drone: " + drone);
+    }
+    
+    public void addOrder(Order order) {
+        pendingOrders.add(order);
+        System.out.println(" Added order: " + order);
+    }
+    
+    public Drone findDroneForOrder(Order order) {
+        Deliverable deliverable = order.getDeliverable();
+        double weight = deliverable.getWeight();
+        Position destination = deliverable.getDestination();
+        
+        if (!map.isAllowed(destination)) {
+            return null;
+        }
+        
+        Drone bestDrone = null;
+        double bestScore = -1;
+        
+        for (Drone drone : fleet) {
+            if (!"AVAILABLE".equals(drone.getStatus())) continue;
+            if (weight > drone.getCapacity()) continue;
+            
+            if (order.isExpress() && !(drone instanceof ExpressDrone)) {
+                continue;
+            }
+            
+            double distance = drone.getPosition().distanceTo(destination);
+            double neededBattery = drone.calculateConsumption(distance);
+            
+            if (drone.getBattery() < neededBattery * 1.1) {
+                continue;
+            }
+            
+            double score = drone.getBattery();
+            if (distance < 10) score += 100;
+            else if (distance < 20) score += 50;
+            
+            if (score > bestScore) {
+                bestScore = score;
+                bestDrone = drone;
+            }
+        }
+        
+        return bestDrone;
+    }
+    
+    public boolean assignOrder(Order order) {
+        Drone drone = findDroneForOrder(order);
+        
+        if (drone != null) {
+            order.setStatus("IN_PROGRESS");
+            drone.setStatus("IN_DELIVERY");
+            
+            pendingOrders.remove(order);
+            processedOrders.add(order);
+            return true;
+        }
+        return false;
+    }
+    
+    public void simulateMinute() {
+        // order
+        for (int i = 0; i < Math.min(2, pendingOrders.size()); i++) {
+            Order order = pendingOrders.get(i);
+            assignOrder(order);
+        }
+        
+        // drone
+        for (Drone drone : fleet) {
+            if ("IN_DELIVERY".equals(drone.getStatus())) {
+                for (Order order : processedOrders) {
+                    if ("IN_PROGRESS".equals(order.getStatus())) {
+                        Position destination = order.getDeliverable().getDestination();
+                        
+                        if (drone.getPosition().equals(destination)) {
+                            completeDelivery(order, drone);
+                            returnDroneToBase(drone);
+                        } else {
+                            moveDrone(drone, destination);
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+        
+        // charge
+        for (Drone drone : fleet) {
+            if ("AVAILABLE".equals(drone.getStatus()) && drone.getBattery() < 40) {
+                drone.recharge(3);
+            }
+        }
+    }
+    
+    private void moveDrone(Drone drone, Position destination) {
+        double speedKmPerMin = drone.getSpeed() / 60.0;
+        Position currentPos = drone.getPosition();
+        
+        if (currentPos.equals(destination)) return;
+        
+        Position nextPos = currentPos.moveTo(destination, speedKmPerMin);
+        double stepDistance = currentPos.distanceTo(nextPos);
+        
+        if (stepDistance > 0) {
+            double consumption = drone.calculateConsumption(stepDistance);
+            
+            if (drone.getBattery() < consumption) {
+                drone.setStatus("AVAILABLE");
+                return;
+            }
+            
+            drone.setBattery(drone.getBattery() - consumption);
+            drone.setPosition(nextPos);
+            drone.setTotalDistance(drone.getTotalDistance() + stepDistance);
+            
+            totalDistance += stepDistance;
+            totalEnergyConsumed += consumption;
+        }
+    }
+    
+    private void completeDelivery(Order order, Drone drone) {
+        order.setStatus("DELIVERED");
+        drone.setStatus("AVAILABLE");
+        
+        totalDeliveries++;
+        if (order.isExpress()) {
+            expressDeliveries++;
+        } else {
+            normalDeliveries++;
+        }
+    }
+    
+    private void returnDroneToBase(Drone drone) {
+        if (!drone.getPosition().equals(base)) {
+            double distanceToBase = drone.getPosition().distanceTo(base);
+            
+            if (distanceToBase > 0) {
+                double consumption = drone.calculateConsumption(distanceToBase);
+                
+                drone.setBattery(drone.getBattery() - consumption);
+                drone.setPosition(base);
+                drone.setTotalDistance(drone.getTotalDistance() + distanceToBase);
+                
+                totalDistance += distanceToBase;
+                totalEnergyConsumed += consumption;
+            }
+        }
+    }
+    
+    // Getters
+    public List<Drone> getFleet() { return fleet; }
+    public List<Order> getPendingOrders() { return pendingOrders; }
+    public List<Order> getProcessedOrders() { return processedOrders; }
+    
+    public static int getTotalDeliveries() { return totalDeliveries; }
+    public static double getTotalDistance() { return totalDistance; }
+    public static double getTotalEnergyConsumed() { return totalEnergyConsumed; }
+}

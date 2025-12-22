@@ -1,0 +1,482 @@
+package simulation;
+_______________________________________________________________
+class Simulator
+_______________________________________________________________
+import control.ControlCenter;
+import geographic.*;
+import drones.*;
+import orders.*;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Random;
+
+public class Simulator {
+    private ControlCenter controlCenter;
+    private Random random;
+    private int currentMinute;
+    private final int totalMinutes = 480;
+    private List<String> eventLog;
+    private int ordersGenerated = 0;
+    
+    public Simulator(ControlCenter controlCenter) {
+        this.controlCenter = controlCenter;
+        this.random = new Random(42); 
+        this.currentMinute = 0;
+        this.eventLog = new ArrayList<>();
+    }
+    
+    
+    public void runFullDaySimulation() {
+        System.out.println("\n" + "=".repeat(70));
+        System.out.println("Starting full workday simulation (" + totalMinutes + " minutes = 8 hours)");
+        System.out.println("=".repeat(70));
+        
+        logEvent("Simulation started");
+        displayInitialConfiguration();
+        
+        generateInitialOrders();
+        
+        // Run simulation minute by minute
+        for (currentMinute = 1; currentMinute <= totalMinutes; currentMinute++) {
+            simulateOneMinute();
+            
+            // Display progress
+            if (currentMinute % 60 == 0) {
+                displayHourlyReport(currentMinute / 60);
+            }
+            
+            // Mid-day optimizations
+            if (currentMinute == 240) { // After 4 hours
+                performMidDayOptimization();
+            }
+        }
+        
+        logEvent("Workday ended");
+        performEndOfDayOperations();
+        displayFinalReport();
+    }
+
+    private void displayInitialConfiguration() {
+        System.out.println("\nSystem Configuration:");
+        System.out.println("   - Number of drones: " + controlCenter.getFleet().size());
+        System.out.println("   - Total capacity: " + calculateTotalCapacity() + " kg/flight");
+    }
+
+    private double calculateTotalCapacity() {
+        double total = 0;
+        for (var drone : controlCenter.getFleet()) {
+            total += drone.getCapacity();
+        }
+        return total;
+    }
+
+    // ============ Enhanced one-minute simulation ============
+    private void simulateOneMinute() {
+        // 1. Generate new orders (realistic rate)
+        generateOrdersBasedOnTime();
+        
+        // 2. Run control center
+        controlCenter.simulateMinute();
+        
+        // 3. Log significant events
+        logSignificantEvents();
+        
+        // 4. Check for system issues
+        checkForSystemIssues();
+    }
+
+    private void generateOrdersBasedOnTime() {
+        // FIX: Generate orders at realistic rates based on time of day
+        double probability;
+        
+        if (currentMinute <= 120) { // Morning (8-10 AM): Peak
+            probability = 0.15;
+        } else if (currentMinute <= 300) { // Mid-day (10 AM-2 PM): Average
+            probability = 0.10;
+        } else if (currentMinute <= 420) { // Afternoon (2-5 PM): Second peak
+            probability = 0.12;
+        } else { // Evening (5-8 PM): Low
+            probability = 0.05;
+        }
+        
+        if (random.nextDouble() < probability) {
+            int ordersToGenerate = 1;
+            
+            // During peak times, generate more orders
+            if (currentMinute <= 120 || (currentMinute > 300 && currentMinute <= 420)) {
+                if (random.nextDouble() < 0.3) {
+                    ordersToGenerate = 2;
+                }
+            }
+            
+            for (int i = 0; i < ordersToGenerate; i++) {
+                generateRealisticOrder();
+            }
+        }
+    }
+
+    private void generateRealisticOrder() {
+        String[] clients = {"Ahmed", "Fatima", "Mohammed", "Sarah", "Khalid", "Noor", "Ali", "Lina", "Yousef", "Maryam"};
+        String[] neighborhoods = {"Al-Salam", "Al-Nahda", "Al-Markaz", "Al-Riyadh", "Al-Khaleej", "Al-Andalus"};
+        
+        ordersGenerated++;
+        
+        // FIX: Realistic locations (80% close, 20% far)
+        double x, y;
+        if (random.nextDouble() < 0.8) {
+            x = 2 + random.nextDouble() * 25; 
+            y = 2 + random.nextDouble() * 25;
+        } else {
+            x = 25 + random.nextDouble() * 25; 
+            y = 25 + random.nextDouble() * 25;
+        }
+        
+        Position destination = new Position(x, y);
+        
+        // FIX: Realistic weights (mostly light)
+        double weight;
+        double rand = random.nextDouble();
+        if (rand < 0.7) { // 70% light (0.1-1.0 kg)
+            weight = 0.1 + random.nextDouble() * 0.9;
+        } else if (rand < 0.95) { // 25% medium (1.0-2.5 kg)
+            weight = 1.0 + random.nextDouble() * 1.5;
+        } else { // 5% heavy (2.5-3.5 kg)
+            weight = 2.5 + random.nextDouble() * 1.0;
+        }
+        
+        // FIX: 20% express orders, 80% normal
+        String urgency = random.nextDouble() < 0.2 ? "EXPRESS" : "NORMAL";
+        
+        // Realistic prices
+        double initialPrice = 50 + random.nextDouble() * 200;
+        
+        String client = clients[random.nextInt(clients.length)];
+        String neighborhood = neighborhoods[random.nextInt(neighborhoods.length)];
+        
+        try {
+            StandardPackage pkg = new StandardPackage(weight, destination);
+            Order order = new Order(client + " (" + neighborhood + ")", pkg, urgency, initialPrice);
+            controlCenter.addOrder(order);
+            
+            logEvent("New order #" + order.getId() + ": " + urgency + 
+                    ", " + String.format("%.1f", weight) + "kg" +
+                    ", to " + neighborhood + " " + destination);
+        } catch (IllegalArgumentException e) {
+            // Ignore invalid orders
+        }
+    }
+
+    private void generateInitialOrders() {
+        System.out.println("\nGenerating initial orders...");
+        
+        // Create 8-12 realistic initial orders
+        int initialOrders = 8 + random.nextInt(5);
+        for (int i = 0; i < initialOrders; i++) {
+            generateRealisticOrder();
+        }
+        
+        logEvent("Created " + initialOrders + " initial orders");
+        System.out.println("   Done: Created " + initialOrders + " initial orders");
+    }
+
+    private void logSignificantEvents() {
+        // Log every 30 minutes or at significant events
+        if (currentMinute % 30 == 0) {
+            int pending = controlCenter.getPendingOrders().size();
+            int deliveries = ControlCenter.getTotalDeliveries();
+            double successRate = (ordersGenerated > 0) ? 
+                (deliveries * 100.0 / ordersGenerated) : 0;
+            
+            logEvent(String.format("Progress: %d minutes | %d pending | %d delivered | Success: %.1f%%", 
+                                 currentMinute, pending, deliveries, successRate));
+        }
+    }
+
+    private void checkForSystemIssues() {
+        int pending = controlCenter.getPendingOrders().size();
+        
+        // Warning if orders are accumulating
+        
+        // Warning if drone batteries are low
+        for (var drone : controlCenter.getFleet()) {
+            if (drone.getBattery() < 15 && "AVAILABLE".equals(drone.getStatus())) {
+                logEvent("Low battery: Drone #" + drone.getId() + " at " + 
+                        String.format("%.1f", drone.getBattery()) + "%");
+            }
+        }
+    }
+
+    // ============ System optimizations ============
+    private void performMidDayOptimization() {
+        System.out.println("\nMid-day optimizations:");
+        
+        // Charge active drones
+        int recharged = 0;
+        for (var drone : controlCenter.getFleet()) {
+            if (drone.getBattery() < 50) {
+                double needed = 80 - drone.getBattery();
+                drone.recharge(Math.min(needed, 30)); 
+                recharged++;
+                System.out.println("   Charged drone #" + drone.getId() + " to " + 
+                                 String.format("%.1f", drone.getBattery()) + "%");
+            }
+        }
+        
+        logEvent("Mid-day optimization: Charged " + recharged + " drones");
+    }
+
+    private void performEndOfDayOperations() {
+        System.out.println("\nEnd of day operations:");
+        
+        // Return all drones to base
+        int returned = 0;
+        for (var drone : controlCenter.getFleet()) {
+            // Return drone logic here
+        }
+        
+        // Final charging
+        for (var drone : controlCenter.getFleet()) {
+            if (drone.getBattery() < 80) {
+                drone.recharge(100 - drone.getBattery());
+            }
+        }
+        
+        logEvent("End of day: " + returned + " drones returned, fully charged");
+        System.out.println("   Done: " + returned + " drones returned to base");
+        System.out.println("   Done: All drones fully charged");
+    }
+
+    // ============ Enhanced reports ============
+    private void displayHourlyReport(int hour) {
+        int deliveries = ControlCenter.getTotalDeliveries();
+        double distance = ControlCenter.getTotalDistance();
+        int pending = controlCenter.getPendingOrders().size();
+        int activeDrones = countActiveDrones();
+        double successRate = (ordersGenerated > 0) ? 
+            (deliveries * 100.0 / ordersGenerated) : 0;
+        
+        System.out.println("\n=== Hour " + hour + " Report ===");
+        System.out.println("   Time: " + hour + " hours (" + currentMinute + " minutes)");
+        System.out.println("   Completed deliveries: " + deliveries);
+        System.out.println("   Pending orders: " + pending);
+        System.out.println("   Success rate: " + String.format("%.1f", successRate) + "%");
+        System.out.println("   Total distance: " + String.format("%.1f", distance) + " km");
+        System.out.println("   Active drones: " + activeDrones + "/" + controlCenter.getFleet().size());
+        System.out.println("   Energy consumed: " + String.format("%.1f", ControlCenter.getTotalEnergyConsumed()) + "%");
+        
+        
+        if (hour == 4) System.out.println("   Mid-day break");
+        if (hour == 8) System.out.println("   Workday ended");
+    }
+
+    private int countActiveDrones() {
+        int count = 0;
+        for (var drone : controlCenter.getFleet()) {
+            if (!"AVAILABLE".equals(drone.getStatus())) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    private void displayFinalReport() {
+        System.out.println("\n" + "=".repeat(70));
+        System.out.println("Final Simulation Report - Performance Analysis");
+        System.out.println("=".repeat(70));
+        
+        int totalOrders = ordersGenerated;
+        int deliveries = ControlCenter.getTotalDeliveries();
+        double successRate = (totalOrders > 0) ? (deliveries * 100.0 / totalOrders) : 0;
+        double avgDistancePerDrone = calculateAverageDistance();
+        
+        System.out.println("\nGeneral Statistics:");
+        System.out.println("   Simulation duration: 8 hours (" + totalMinutes + " minutes)");
+        System.out.println("   Total orders generated: " + totalOrders);
+        System.out.println("   Completed deliveries: " + deliveries);
+        System.out.println("   Success rate: " + String.format("%.1f", successRate) + "%");
+        System.out.println("   Total distance: " + String.format("%.2f", ControlCenter.getTotalDistance()) + " km");
+        System.out.println("   Average distance/drone: " + String.format("%.1f", avgDistancePerDrone) + " km");
+        
+        // Drone performance analysis
+        System.out.println("\nDrone Performance Analysis:");
+        displayDronePerformanceAnalysis();
+        
+        // Order analysis
+        System.out.println("\nOrder Analysis:");
+        System.out.println("   Remaining pending orders: " + controlCenter.getPendingOrders().size());
+        System.out.println("   Processed orders: " + controlCenter.getProcessedOrders().size());
+        
+        if (controlCenter.getPendingOrders().size() > 0) {
+            System.out.println("   Note: There are pending orders not processed");
+        }
+        
+        // Recent events
+        System.out.println("\nEvent Summary:");
+        displayEventSummary();
+        
+        System.out.println("\n" + "=".repeat(70));
+        System.out.println("Workday simulation completed successfully!");
+        System.out.println("=".repeat(70));
+    }
+
+    private double calculateAverageDistance() {
+        if (controlCenter.getFleet().isEmpty()) return 0;
+        double total = 0;
+        for (var drone : controlCenter.getFleet()) {
+            total += drone.getTotalDistance();
+        }
+        return total / controlCenter.getFleet().size();
+    }
+
+    private void displayDronePerformanceAnalysis() {
+        System.out.println("   " + "-".repeat(50));
+        
+        for (var drone : controlCenter.getFleet()) {
+            double efficiency = (drone.getTotalDistance() > 0) ? 
+                drone.getTotalDistance() / drone.calculateConsumption(drone.getTotalDistance()) : 0;
+            String performance;
+            
+            if (drone.getTotalDistance() > 100) performance = "Excellent";
+            else if (drone.getTotalDistance() > 60) performance = "Good";
+            else if (drone.getTotalDistance() > 30) performance = "Average";
+            else performance = "Poor";
+            
+            System.out.printf("   Drone #%d (%s):%n", drone.getId(), drone.getModel());
+            System.out.printf("     • Distance: %.1f km | Battery: %.1f%%%n", 
+                            drone.getTotalDistance(), drone.getBattery());
+            System.out.printf("     • Efficiency: %.2f km/%% | Performance: %s%n", 
+                            efficiency, performance);
+            System.out.println("     " + "-".repeat(30));
+        }
+    }
+
+    private void displayEventSummary() {
+        int totalEvents = eventLog.size();
+        int startIndex = Math.max(0, totalEvents - 8); // Last 8 events
+        
+        for (int i = startIndex; i < totalEvents; i++) {
+            System.out.println("   • " + eventLog.get(i));
+        }
+        
+        System.out.println("   ... (Total " + totalEvents + " events)");
+    }
+
+    // ============ UTILITY METHODS ============
+    private void logEvent(String event) {
+        String timestamp = String.format("[%03d]", currentMinute);
+        eventLog.add(timestamp + " " + event);
+    }
+
+    public int getCurrentMinute() { return currentMinute; }
+    public int getTotalMinutes() { return totalMinutes; }
+    public List<String> getEventLog() { return new ArrayList<>(eventLog); }
+    public int getOrdersGenerated() { return ordersGenerated; }
+}
+    ________________________________________________________________________________________________
+____________________________class 2 SimulationRunner ______________________________________________________________________________
+
+import geographic.*;
+import drones.*;
+import orders.*;
+import control.*;
+
+public class SimulationRunner {
+    public static void main(String[] args) {
+        System.out.println("Drone Delivery Simulation");
+        System.out.println("=".repeat(50));
+        
+        // 1. Create 
+        Map map = new Map();
+        map.addDeliveryZone(new DeliveryZone(new Position(10, 10), 15));
+        map.addNoFlyZone(new NoFlyZone(new Position(20, 20), 5));
+        
+        //  2. Create control center 
+        Position base = new Position(0, 0);
+        ControlCenter center = new ControlCenter(base, map);
+        
+        //  3. Create drone fleet 
+        center.addDrone(new StandardDrone(base));
+        center.addDrone(new StandardDrone(base));
+        center.addDrone(new ExpressDrone(base));
+        center.addDrone(new HeavyDrone(base));
+        center.addDrone(new HeavyDrone(base));
+        
+        System.out.println("\nCreated a fleet of 5 drones");
+        
+        // 4. Create simple orders 
+        center.addOrder(new Order("Client 1", 
+            new StandardPackage(0.5, new Position(8, 8)), "NORMAL", 100));
+        center.addOrder(new Order("Client 2", 
+            new StandardPackage(0.8, new Position(12, 6)), "EXPRESS", 150));
+        center.addOrder(new Order("Client 3", 
+            new StandardPackage(2.5, new Position(15, 10)), "NORMAL", 200));
+        center.addOrder(new Order("Client 4", 
+            new StandardPackage(1.2, new Position(6, 12)), "NORMAL", 120));
+        center.addOrder(new Order("Client 5", 
+            new StandardPackage(0.3, new Position(10, 5)), "EXPRESS", 180));
+        
+        System.out.println("Created 5 initial orders");
+        System.out.println("-".repeat(50));
+        
+        
+        System.out.println("\nStarting simulation (120 minutes)");
+        
+        for (int minute = 1; minute <= 120; minute++) {
+            center.simulateMinute();
+            
+            // Display every 30 minutes
+            if (minute % 30 == 0) {
+                System.out.println("\nAfter " + minute + " minutes:");
+                System.out.println("   Deliveries: " + ControlCenter.getTotalDeliveries());
+                System.out.println("   Distance: " + String.format("%.1f", ControlCenter.getTotalDistance()) + " km");
+            }
+        }
+        
+        System.out.println("\n" + "=".repeat(50));
+        System.out.println("Simulation completed");
+        System.out.println("=".repeat(50));
+        
+        //  6. Final results (required in file) 
+        System.out.println("\n" + "=".repeat(50));
+        System.out.println("Final Results");
+        System.out.println("=".repeat(50));
+        
+               //  Total number of deliveries
+        System.out.println("\na) Total number of deliveries: " + ControlCenter.getTotalDeliveries());
+        
+               //  Distance traveled by each drone
+        System.out.println("\nb) Distance traveled by each drone:");
+        for (Drone drone : center.getFleet()) {
+            System.out.println("   Drone #" + drone.getId() + " (" + drone.getModel() + 
+                             "): " + String.format("%.2f", drone.getTotalDistance()) + " km");
+        }
+        
+              //  Final battery status
+        System.out.println("\nc) Final battery status:");
+        for (Drone drone : center.getFleet()) {
+            System.out.println("   Drone #" + drone.getId() + 
+                             ": " + String.format("%.1f", drone.getBattery()) + "%");
+        }
+        
+               //  Most active drone
+        System.out.println("\nd) Most active drone:");
+        Drone mostActive = null;
+        for (Drone drone : center.getFleet()) {
+            if (mostActive == null || drone.getTotalDistance() > mostActive.getTotalDistance()) {
+                mostActive = drone;
+            }
+        }
+        if (mostActive != null) {
+            System.out.println("   Drone #" + mostActive.getId() + " (" + mostActive.getModel() + 
+                             ") with distance: " + String.format("%.2f", mostActive.getTotalDistance()) + " km");
+        }
+        
+        
+        System.out.println("\n" + "=".repeat(50));
+        System.out.println("Additional Information:");
+        System.out.println("=".repeat(50));
+        System.out.println("Total distance: " + String.format("%.2f", ControlCenter.getTotalDistance()) + " km");
+        System.out.println("Pending orders: " + center.getPendingOrders().size());
+        System.out.println("Processed orders: " + center.getProcessedOrders().size());
+    }
+}
